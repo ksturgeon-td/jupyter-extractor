@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jupyter-extractor"
+version = "0.1.0"
+description = "Convert Jupyter notebooks into Claude prompt template files"
+requires-python = ">=3.11"
+dependencies = [
+    "nbformat>=5.9",
+    "httpx>=0.27",
+    "click>=8.1",
+    "html2text>=2024.2",
+]
+
+[project.scripts]
+jupyter-extractor = "jupyter_extractor.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
