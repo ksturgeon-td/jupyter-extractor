@@ -46,6 +46,7 @@ def make_client(
     *,
     api_key: str | None = None,
     aws_region: str | None = None,
+    aws_profile: str | None = None,
     vertex_project: str | None = None,
     vertex_region: str | None = None,
 ):
@@ -71,6 +72,8 @@ def make_client(
         kwargs: dict = {}
         if aws_region:
             kwargs["aws_region"] = aws_region
+        if aws_profile:
+            kwargs["aws_profile"] = aws_profile
         return AnthropicBedrock(**kwargs)
 
     elif provider == "vertex":
@@ -118,6 +121,7 @@ def enrich_sections(
     model: str | None = None,
     api_key: str | None = None,
     aws_region: str | None = None,
+    aws_profile: str | None = None,
     vertex_project: str | None = None,
     vertex_region: str | None = None,
     on_section: Callable[[Section, int, int], None] | None = None,
@@ -131,6 +135,7 @@ def enrich_sections(
         model:          Model ID override (defaults to PROVIDER_DEFAULT_MODELS[provider]).
         api_key:        Anthropic API key (direct provider only).
         aws_region:     AWS region override (bedrock only).
+        aws_profile:    AWS CLI profile name (bedrock only; or set AWS_PROFILE env var).
         vertex_project: GCP project ID (vertex only).
         vertex_region:  GCP region (vertex only).
         on_section:     Optional progress callback(section, index, total).
@@ -143,6 +148,7 @@ def enrich_sections(
         provider,
         api_key=api_key,
         aws_region=aws_region,
+        aws_profile=aws_profile,
         vertex_project=vertex_project,
         vertex_region=vertex_region,
     )

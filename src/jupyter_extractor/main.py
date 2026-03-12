@@ -111,7 +111,13 @@ def extract(source: str, output_dir: str, verbose: bool) -> None:
     "--aws-region",
     envvar="AWS_DEFAULT_REGION",
     default=None,
-    help="AWS region — bedrock provider only (or set AWS_DEFAULT_REGION env var).",
+    help="AWS region — bedrock only (or set AWS_DEFAULT_REGION env var).",
+)
+@click.option(
+    "--aws-profile",
+    envvar="AWS_PROFILE",
+    default=None,
+    help="AWS CLI profile name — bedrock only (or set AWS_PROFILE env var).",
 )
 @click.option(
     "--vertex-project",
@@ -139,6 +145,7 @@ def skills(
     model: str | None,
     api_key: str | None,
     aws_region: str | None,
+    aws_profile: str | None,
     vertex_project: str | None,
     vertex_region: str | None,
     verbose: bool,
@@ -197,6 +204,7 @@ def skills(
             model=model,
             api_key=api_key,
             aws_region=aws_region,
+            aws_profile=aws_profile,
             vertex_project=vertex_project,
             vertex_region=vertex_region,
             on_section=_progress,
