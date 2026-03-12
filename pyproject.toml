@@ -15,6 +15,10 @@ dependencies = [
     "anthropic>=0.40",
 ]
 
+[project.optional-dependencies]
+bedrock = ["anthropic[bedrock]>=0.40"]
+vertex  = ["anthropic[vertex]>=0.40"]
+
 [project.scripts]
 jupyter-extractor = "jupyter_extractor.main:cli"
 

@@ -23,7 +23,77 @@ class EnrichedSection:
     mcp_tools: list[str] = field(default_factory=list)
 
 
-# --- MCP hint detection patterns ---
+# ---------------------------------------------------------------------------
+# Provider configuration
+# ---------------------------------------------------------------------------
+
+# Default model IDs per provider.  Users can override with --model.
+PROVIDER_DEFAULT_MODELS: dict[str, str] = {
+    "anthropic": "claude-opus-4-6",
+    "bedrock":   "anthropic.claude-opus-4-6-20250514-v1:0",
+    "vertex":    "claude-opus-4-6@20250514",
+}
+
+PROVIDERS = list(PROVIDER_DEFAULT_MODELS.keys())
+
+
+def default_model(provider: str) -> str:
+    return PROVIDER_DEFAULT_MODELS.get(provider, "claude-opus-4-6")
+
+
+def make_client(
+    provider: str,
+    *,
+    api_key: str | None = None,
+    aws_region: str | None = None,
+    vertex_project: str | None = None,
+    vertex_region: str | None = None,
+):
+    """Construct the appropriate Anthropic SDK client for the given provider.
+
+    - anthropic: direct API (ANTHROPIC_API_KEY env var or api_key param)
+    - bedrock:   AnthropicBedrock — requires `pip install 'anthropic[bedrock]'`
+                 and standard AWS credentials in the environment
+    - vertex:    AnthropicVertex  — requires `pip install 'anthropic[vertex]'`
+                 and GCP credentials in the environment
+    """
+    if provider == "anthropic":
+        from anthropic import Anthropic
+        return Anthropic(api_key=api_key) if api_key else Anthropic()
+
+    elif provider == "bedrock":
+        try:
+            from anthropic import AnthropicBedrock
+        except ImportError:
+            raise RuntimeError(
+                "AWS Bedrock support requires: pip install 'anthropic[bedrock]'"
+            )
+        kwargs: dict = {}
+        if aws_region:
+            kwargs["aws_region"] = aws_region
+        return AnthropicBedrock(**kwargs)
+
+    elif provider == "vertex":
+        try:
+            from anthropic import AnthropicVertex
+        except ImportError:
+            raise RuntimeError(
+                "Google Vertex AI support requires: pip install 'anthropic[vertex]'"
+            )
+        kwargs = {}
+        if vertex_project:
+            kwargs["project_id"] = vertex_project
+        if vertex_region:
+            kwargs["region"] = vertex_region
+        return AnthropicVertex(**kwargs)
+
+    else:
+        raise ValueError(f"Unknown provider {provider!r}. Choose from: {', '.join(PROVIDERS)}")
+
+
+# ---------------------------------------------------------------------------
+# MCP hint detection
+# ---------------------------------------------------------------------------
 
 _SQL_RE = re.compile(
     r"\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|FROM|WHERE|JOIN|REPLACE\s+VIEW)\b",
@@ -36,35 +106,53 @@ _FILE_RE = re.compile(
 )
 
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def enrich_sections(
     sections: list[Section],
     data: NotebookData,
     *,
-    model: str = "claude-opus-4-6",
+    provider: str = "anthropic",
+    model: str | None = None,
     api_key: str | None = None,
+    aws_region: str | None = None,
+    vertex_project: str | None = None,
+    vertex_region: str | None = None,
     on_section: Callable[[Section, int, int], None] | None = None,
 ) -> list[EnrichedSection]:
     """Enrich a list of sections into skill definitions via the Claude API.
 
     Args:
-        sections:    Sections from sectionize().
-        data:        The source NotebookData (for title, language).
-        model:       Claude model to use for enrichment.
-        api_key:     Anthropic API key (falls back to ANTHROPIC_API_KEY env var).
-        on_section:  Optional progress callback(section, index, total).
+        sections:       Sections from sectionize().
+        data:           The source NotebookData (for title, language).
+        provider:       LLM provider — "anthropic", "bedrock", or "vertex".
+        model:          Model ID override (defaults to PROVIDER_DEFAULT_MODELS[provider]).
+        api_key:        Anthropic API key (direct provider only).
+        aws_region:     AWS region override (bedrock only).
+        vertex_project: GCP project ID (vertex only).
+        vertex_region:  GCP region (vertex only).
+        on_section:     Optional progress callback(section, index, total).
 
     Returns:
         List of EnrichedSection objects in the same order as input.
     """
-    from anthropic import Anthropic
-
-    client = Anthropic(api_key=api_key) if api_key else Anthropic()
+    resolved_model = model or default_model(provider)
+    client = make_client(
+        provider,
+        api_key=api_key,
+        aws_region=aws_region,
+        vertex_project=vertex_project,
+        vertex_region=vertex_region,
+    )
+    use_thinking = (provider == "anthropic")
 
     result: list[EnrichedSection] = []
     for i, section in enumerate(sections):
         if on_section:
             on_section(section, i, len(sections))
-        result.append(_enrich_one(section, data, client, model))
+        result.append(_enrich_one(section, data, client, resolved_model, use_thinking))
 
     return result
 
@@ -107,6 +195,7 @@ def _enrich_one(
     data: NotebookData,
     client,
     model: str,
+    use_thinking: bool,
 ) -> EnrichedSection:
     hints = _detect_mcp_hints(section)
     hints_note = (
@@ -121,13 +210,16 @@ def _enrich_one(
         content=_render_section(section, data.language),
     )
 
-    with client.messages.stream(
+    stream_kwargs: dict = dict(
         model=model,
         max_tokens=4096,
-        thinking={"type": "adaptive"},
         system=_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
-    ) as stream:
+    )
+    if use_thinking:
+        stream_kwargs["thinking"] = {"type": "adaptive"}
+
+    with client.messages.stream(**stream_kwargs) as stream:
         final = stream.get_final_message()
 
     raw = next(b.text for b in final.content if b.type == "text")

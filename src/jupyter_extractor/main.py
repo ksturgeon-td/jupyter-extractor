@@ -85,16 +85,45 @@ def extract(source: str, output_dir: str, verbose: bool) -> None:
     help="Output format for skill files.",
 )
 @click.option(
-    "--model", "-m",
-    default="claude-opus-4-6",
+    "--provider", "-p",
+    type=click.Choice(["anthropic", "bedrock", "vertex"]),
+    default="anthropic",
     show_default=True,
-    help="Claude model for enrichment.",
+    help="LLM provider for enrichment.",
+)
+@click.option(
+    "--model", "-m",
+    default=None,
+    help=(
+        "Model ID override. Defaults per provider: "
+        "anthropic=claude-opus-4-6, "
+        "bedrock=anthropic.claude-opus-4-6-20250514-v1:0, "
+        "vertex=claude-opus-4-6@20250514."
+    ),
 )
 @click.option(
     "--api-key",
     envvar="ANTHROPIC_API_KEY",
     default=None,
-    help="Anthropic API key (or set ANTHROPIC_API_KEY env var).",
+    help="Anthropic API key — direct provider only (or set ANTHROPIC_API_KEY env var).",
+)
+@click.option(
+    "--aws-region",
+    envvar="AWS_DEFAULT_REGION",
+    default=None,
+    help="AWS region — bedrock provider only (or set AWS_DEFAULT_REGION env var).",
+)
+@click.option(
+    "--vertex-project",
+    envvar="GOOGLE_CLOUD_PROJECT",
+    default=None,
+    help="GCP project ID — vertex provider only (or set GOOGLE_CLOUD_PROJECT env var).",
+)
+@click.option(
+    "--vertex-region",
+    envvar="GOOGLE_CLOUD_REGION",
+    default=None,
+    help="GCP region — vertex provider only (or set GOOGLE_CLOUD_REGION env var).",
 )
 @click.option(
     "--verbose", "-v",
@@ -106,8 +135,12 @@ def skills(
     source: str,
     output_dir: str,
     target: str,
-    model: str,
+    provider: str,
+    model: str | None,
     api_key: str | None,
+    aws_region: str | None,
+    vertex_project: str | None,
+    vertex_region: str | None,
     verbose: bool,
 ) -> None:
     """Convert a notebook into modular Claude skill files.
@@ -115,8 +148,15 @@ def skills(
     \b
     SOURCE      URL (http/https) or local .ipynb file path
     OUTPUT_DIR  Directory where the skill files will be written
+
+    Provider setup:
+      anthropic  ANTHROPIC_API_KEY env var (or --api-key)
+      bedrock    AWS credentials in environment + AWS_DEFAULT_REGION;
+                 requires: pip install 'anthropic[bedrock]'
+      vertex     GCP credentials in environment + GOOGLE_CLOUD_PROJECT;
+                 requires: pip install 'anthropic[vertex]'
     """
-    from .enricher import enrich_sections
+    from .enricher import enrich_sections, default_model
     from .formatter import format_skill
     from .sectionizer import sectionize
 
@@ -143,7 +183,8 @@ def skills(
     headings = ", ".join(s.heading for s in sections)
     click.echo(f"  Found {len(sections)} section(s): {headings}")
 
-    click.echo(f"Enriching with Claude ({model})...")
+    resolved_model = model or default_model(provider)
+    click.echo(f"Enriching with Claude ({provider} / {resolved_model})...")
 
     def _progress(section, idx, total):
         click.echo(f"  [{idx + 1}/{total}] {section.heading} …")
@@ -152,8 +193,12 @@ def skills(
         enriched = enrich_sections(
             sections,
             data,
+            provider=provider,
             model=model,
             api_key=api_key,
+            aws_region=aws_region,
+            vertex_project=vertex_project,
+            vertex_region=vertex_region,
             on_section=_progress,
         )
     except Exception as e:

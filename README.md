@@ -37,10 +37,21 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-For Phase 2 (`skills`), set your Anthropic API key:
+For Phase 2 (`skills`), set credentials for your chosen provider:
 
 ```bash
+# Direct Anthropic API (default)
 export ANTHROPIC_API_KEY=sk-ant-...
+
+# AWS Bedrock
+pip install 'anthropic[bedrock]'
+export AWS_DEFAULT_REGION=us-east-1
+# (standard AWS credentials: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / IAM role)
+
+# Google Vertex AI
+pip install 'anthropic[vertex]'
+export GOOGLE_CLOUD_PROJECT=my-project
+# (standard GCP credentials: GOOGLE_APPLICATION_CREDENTIALS or gcloud auth)
 ```
 
 ---
@@ -85,22 +96,33 @@ jupyter-extractor skills SOURCE OUTPUT_DIR [--target FORMAT] [--model MODEL] [--
 | `SOURCE` | Path to a local `.ipynb` file, or a URL |
 | `OUTPUT_DIR` | Directory to write the skill files into |
 | `--target` / `-t` | Output format: `claude-code` (default), `claude-desktop`, or `generic` |
-| `--model` / `-m` | Claude model for enrichment (default: `claude-opus-4-6`) |
-| `--api-key` | Anthropic API key (or set `ANTHROPIC_API_KEY` env var) |
+| `--provider` / `-p` | LLM provider: `anthropic` (default), `bedrock`, or `vertex` |
+| `--model` / `-m` | Model ID override (sensible default per provider) |
+| `--api-key` | Anthropic API key — direct provider only (or `ANTHROPIC_API_KEY` env var) |
+| `--aws-region` | AWS region — bedrock only (or `AWS_DEFAULT_REGION` env var) |
+| `--vertex-project` | GCP project ID — vertex only (or `GOOGLE_CLOUD_PROJECT` env var) |
+| `--vertex-region` | GCP region — vertex only (or `GOOGLE_CLOUD_REGION` env var) |
 | `--verbose` / `-v` | Print section headings, filenames, and detected MCP tools |
 
 **Examples:**
 
 ```bash
-# Claude Code slash-command format
+# Claude Code format, direct Anthropic API (default)
 jupyter-extractor skills my_notebook.ipynb ./skills/ --target claude-code
 
-# Claude Desktop project-instruction format
+# AWS Bedrock
+jupyter-extractor skills my_notebook.ipynb ./skills/ --provider bedrock
+
+# Google Vertex AI
+jupyter-extractor skills my_notebook.ipynb ./skills/ --provider vertex
+
+# Custom model override
+jupyter-extractor skills my_notebook.ipynb ./skills/ \
+  --provider bedrock --model us.anthropic.claude-opus-4-6-20250514-v1:0
+
+# Claude Desktop format with verbose output
 jupyter-extractor skills https://github.com/owner/repo/blob/main/analysis.ipynb ./skills/ \
   --target claude-desktop --verbose
-
-# Generic portable format
-jupyter-extractor skills my_notebook.ipynb ./skills/ --target generic
 ```
 
 ---
