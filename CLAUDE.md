@@ -1,106 +1,121 @@
 # Jupyter Extractor — Project Checkpoint
 
 ## Goal
-Convert Jupyter notebooks (`.ipynb`) into Claude skill files with associated artifacts.
+Convert Jupyter notebooks (`.ipynb`) into Claude skill files — either as a single
+consolidated prompt template (Phase 1) or as modular, AI-enriched skill files per
+notebook section (Phase 2).
 
 ## Features
-1. **Load** a notebook from a URL or local file upload
+1. **Load** a notebook from a URL or local file path
 2. **Parse** markdown cells, code cells, and cell outputs
-3. **Construct** a Claude skill file (`.md`) with extracted data and metadata
-4. **Write** the skill file + artifacts to a user-chosen output folder
+3. **Phase 1** — Construct a single Claude prompt template `.md` with all content
+4. **Phase 2** — Sectionize by headings, enrich with Claude API, render per-section skill files
+5. **Write** output to a user-chosen folder
 
-## Architecture Plan
-- **CLI entrypoint**: `main.py` — accepts a URL or file path + output folder
-- **Loader** (`loader.py`): fetches/reads `.ipynb` JSON
-- **Parser** (`parser.py`): extracts cells (markdown, code, output) and notebook metadata
-- **Builder** (`builder.py`): constructs the Claude skill `.md` format from parsed data
-- **Writer** (`writer.py`): writes the skill file and any artifacts (images, data) to disk
-- CLI only (no web UI)
+## Architecture
 
-## Output Format — Claude Prompt Template
-A standalone `.md` file structured as a reusable prompt. Notebook content is embedded
-as labeled context blocks. Format:
-
+### Phase 1 pipeline
 ```
----
-title: <notebook title>
-source: <url or filename>
-created: <date>
----
-
-# <Notebook Title>
-
-## Overview
-<first markdown cell or notebook description>
-
-## Context
-
-### Markdown
-<all markdown cells, in order>
-
-### Code
-<all code cells with language label>
-
-### Outputs
-<text/image outputs per cell>
-
-## Prompt
-<placeholder prompt for the user to fill in>
+loader → parser → builder → writer
 ```
+
+### Phase 2 pipeline
+```
+loader → parser → sectionizer → enricher (Claude API) → formatter → writer
+```
+
+### Module responsibilities
+- **CLI entrypoint**: `main.py` — Click group with `extract` (Phase 1) and `skills` (Phase 2) subcommands
+- **Loader** (`loader.py`): fetches/reads `.ipynb` JSON; normalizes GitHub blob URLs
+- **Parser** (`parser.py`): produces `NotebookData` with `Cell` and `Output` dataclasses
+- **Builder** (`builder.py`): constructs Phase 1 consolidated `.md` + artifacts dict
+- **Writer** (`writer.py`): writes `.md` and binary artifacts to disk
+- **Sectionizer** (`sectionizer.py`): groups cells into `Section` objects by heading (`#`/`##`/`###` and bold-only cells)
+- **Enricher** (`enricher.py`): calls `claude-opus-4-6` (adaptive thinking + streaming) per section; returns `EnrichedSection` with title, slug, description, prompt, mcp_tools
+- **Formatter** (`formatter.py`): renders `EnrichedSection` to `claude-code`, `claude-desktop`, or `generic` format
 
 ## Stack
 - Python 3.11+
-- `nbformat` for parsing `.ipynb` files
-- `httpx` for URL fetching
-- `click` for CLI
+- `nbformat>=5.9` for parsing `.ipynb` files
+- `httpx>=0.27` for URL fetching
+- `click>=8.1` for CLI
+- `html2text>=2024.2` for HTML→markdown conversion
+- `anthropic>=0.40` for Phase 2 skill enrichment
+
+## CLI
+```
+jupyter-extractor extract SOURCE OUTPUT_DIR [--verbose]
+jupyter-extractor skills  SOURCE OUTPUT_DIR [--target claude-code|claude-desktop|generic]
+                                             [--model MODEL] [--api-key KEY] [--verbose]
+```
+
+## Phase 2 output formats
+
+### `claude-code` (default)
+YAML frontmatter with `description` + `allowed-tools`, then skill prompt + Reference block.
+Intended for `.claude/commands/<slug>.md`.
+
+### `claude-desktop`
+Title + Purpose + optional Required tools note + Instructions + Reference block.
+Intended for Claude Desktop project instructions.
+
+### `generic`
+YAML frontmatter (title, description, section, mcp-tools) + prompt + Reference block.
+Portable across agent frameworks.
+
+## MCP tool detection
+Code cells are scanned for SQL keywords, HTTP library calls, and file I/O patterns.
+Hints are passed to Claude, which decides whether to include `mcp_tools` suggestions
+and writes prompts that invoke tools directly rather than just generating code.
 
 ## Progress Checkpoints
 - [x] Project scaffolded (pyproject.toml, folder structure)
-- [x] Loader module: URL + file path loading  (`src/jupyter_extractor/loader.py`)
-- [x] Parser module: extract cells and metadata  (`src/jupyter_extractor/parser.py`)
-- [x] Builder module: construct skill `.md`  (`src/jupyter_extractor/builder.py`)
-- [x] Writer module: write output to chosen folder  (`src/jupyter_extractor/writer.py`)
-- [x] CLI wired up end-to-end  (`src/jupyter_extractor/main.py`)
+- [x] Loader module: URL + file path loading (`src/jupyter_extractor/loader.py`)
+- [x] Parser module: extract cells and metadata (`src/jupyter_extractor/parser.py`)
+- [x] Builder module: construct skill `.md` (`src/jupyter_extractor/builder.py`)
+- [x] Writer module: write output to chosen folder (`src/jupyter_extractor/writer.py`)
+- [x] CLI wired up end-to-end (`src/jupyter_extractor/main.py`)
 - [x] Install dependencies and smoke test (`tests/sample.ipynb` → `tests/output/`)
 - [x] Real-world test: Teradata CSA notebook (28 markdown, 61 code cells via GitHub blob URL)
 - [x] GitHub blob URL auto-conversion (`loader._normalize_url`)
-- [x] HTML title extraction (large font-size / h1/h2 fallbacks in `parser._infer_title`)
+- [x] HTML title extraction (`parser._infer_title`)
 - [x] HTML-stripped Overview with title-dedup logic (`builder._overview`)
-- [x] HTML→markdown conversion in Context blocks via `html2text` (`builder._html_to_md`)
+- [x] HTML→markdown conversion via `html2text` (`builder._html_to_md`)
 - [x] Cells rendered in notebook order (markdown + code + outputs interleaved)
 - [x] README.md with installation, usage, examples, and output format docs
+- [x] Phase 2: Sectionizer (`sectionizer.py`) — groups cells by heading into `Section` objects
+- [x] Phase 2: Enricher (`enricher.py`) — Claude API per section → `EnrichedSection`
+- [x] Phase 2: Formatter (`formatter.py`) — renders to claude-code / claude-desktop / generic
+- [x] Phase 2: `skills` CLI subcommand wired up in `main.py`
+- [x] `anthropic>=0.40` added to dependencies
 
 ## Resolved Decisions
-- Output format: Claude prompt template `.md`
+- Output format: Claude prompt template `.md` (Phase 1); per-section skill `.md` files (Phase 2)
 - UI: CLI only
 - Images: saved as separate artifact files alongside the `.md`
-- HTML-heavy notebooks: converted to markdown in both Overview and Context blocks
-- One `.md` per notebook; cells in original order
+- HTML-heavy notebooks: converted to markdown in Overview and Context blocks
+- One `.md` per notebook (Phase 1); one `.md` per section (Phase 2)
+- Phase 2 uses `claude-opus-4-6` with adaptive thinking + streaming by default
+- Breaking change: `extract` is now an explicit subcommand (no backwards-compat shim)
 
 ## Potential Next Steps
 
-### 1. `--max-output-chars N` — Truncate large cell outputs
-Large notebooks (e.g. with DataFrame reprs or long logs) can produce very long output
-sections. Add a click option that truncates any single output block to N characters
-and appends a `… [truncated]` note.
+### 1. `--max-output-chars N` — Truncate large cell outputs (Phase 1)
+Add a click option that truncates any single output block to N characters.
 - Add `max_output_chars: int | None` param to `build_template()` and `_output_block()`
-- Wire up in `main.py` as `--max-output-chars` / `-n`
+- Wire up in `extract` subcommand as `--max-output-chars` / `-n`
 
-### 2. `--skip-outputs` — Omit the Outputs section entirely
-For code-focused use cases where outputs are noise. A flag that skips all output
-rendering and artifact saving.
-- Pass `skip_outputs: bool` into `build_template()`; skip the `cell.outputs` loop
+### 2. `--skip-outputs` — Omit outputs entirely (Phase 1)
+Pass `skip_outputs: bool` into `build_template()`; skip the `cell.outputs` loop.
 
 ### 3. Colab URL support
-Google Colab notebooks are stored in Google Drive. Colab URLs look like:
-  `https://colab.research.google.com/drive/<file-id>`
-or open via GitHub:
-  `https://colab.research.google.com/github/<owner>/<repo>/blob/<branch>/<path>`
-The GitHub variant can be converted to a raw GitHub URL (already supported).
-The Drive variant requires the Google Drive export API or user-supplied credentials —
-flag as out-of-scope unless auth solution is clear.
+The GitHub-via-Colab variant can already be converted to a raw GitHub URL.
+The Drive variant requires Google Drive API or user credentials — out of scope for now.
 
-### 4. PyPI packaging
+### 4. Phase 2 batch mode — process all `.ipynb` in a directory
+Walk a directory, run `skills` on each notebook, write to organised output tree.
+
+### 5. PyPI packaging
 - Add `[project.urls]` and `[project.optional-dependencies]` to `pyproject.toml`
-- Write a `CHANGELOG.md` and tag a `v0.1.0` release
+- Write a `CHANGELOG.md` and tag a release
 - `python -m build && twine upload dist/*`
