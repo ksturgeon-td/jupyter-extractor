@@ -46,7 +46,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # AWS Bedrock
 pip install 'anthropic[bedrock]'
 export AWS_DEFAULT_REGION=us-east-1
-# (standard AWS credentials: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / IAM role)
+# Credentials: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, IAM role, or a named profile:
+export AWS_PROFILE=my-profile
 
 # Google Vertex AI
 pip install 'anthropic[vertex]'
@@ -100,6 +101,7 @@ jupyter-extractor skills SOURCE OUTPUT_DIR [--target FORMAT] [--model MODEL] [--
 | `--model` / `-m` | Model ID override (sensible default per provider) |
 | `--api-key` | Anthropic API key — direct provider only (or `ANTHROPIC_API_KEY` env var) |
 | `--aws-region` | AWS region — bedrock only (or `AWS_DEFAULT_REGION` env var) |
+| `--aws-profile` | AWS CLI profile name — bedrock only (or `AWS_PROFILE` env var) |
 | `--vertex-project` | GCP project ID — vertex only (or `GOOGLE_CLOUD_PROJECT` env var) |
 | `--vertex-region` | GCP region — vertex only (or `GOOGLE_CLOUD_REGION` env var) |
 | `--verbose` / `-v` | Print section headings, filenames, and detected MCP tools |
@@ -115,6 +117,10 @@ jupyter-extractor skills my_notebook.ipynb ./skills/ --provider bedrock
 
 # Google Vertex AI
 jupyter-extractor skills my_notebook.ipynb ./skills/ --provider vertex
+
+# Named AWS CLI profile
+jupyter-extractor skills my_notebook.ipynb ./skills/ \
+  --provider bedrock --aws-profile my-profile
 
 # Custom model override
 jupyter-extractor skills my_notebook.ipynb ./skills/ \
